@@ -1,5 +1,5 @@
 #include <curl/curl.h>
-#include <string.h>
+#include <cstring>
 
 #include <unordered_set>
 #include <iostream>
@@ -9,8 +9,8 @@
 
 using json = nlohmann::json;
 
-// used to have a dynamic string
-typedef struct Response
+// Used to have a dynamic string
+struct Response
 {
   char *string;
   size_t size;
@@ -28,7 +28,6 @@ void formatResponse(char *response);
 std::string FormatHTMLToString(const std::string &response);
 TestCaseResponse GetTestCases(const std::string &content);
 
-std::pair<std::string, std::string> GetParamName(const std::string &param);
 void CreateJSON(json *response, const TestCaseResponse &testCases);
 
 int main()
@@ -53,7 +52,7 @@ int main()
   }
 
   Response response;
-  response.string = (char *)malloc(1);
+  response.string = static_cast<char *>(malloc(1));
   response.size = 0;
 
   // Set options for the HTTP request
@@ -87,7 +86,7 @@ int main()
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_chunk);
 
   // Address of response string is passed in write_chunk as userData
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&response);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, static_cast<void *>(&response));
 
   // Perform the HTTP request
   result = curl_easy_perform(curl);
@@ -105,32 +104,32 @@ int main()
   return 0;
 }
 
-// returns number of bytes in the chunk
-//  data is set to a ptr that points to block of data recieved in this chunk
-//  nmemb is the number of bytes in the block of data
+// Returns number of bytes in the chunk
+// data is set to a ptr that points to block of data received in this chunk
+// nmemb is the number of bytes in the block of data
 // userData points to what we want (points to where the response string is stored)
 size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
 {
   // size is always 1
   size_t real_size = size * nmemb;
 
-  Response *response = (Response *)userData;
-  // allocate more space for chunk that was recieved
-  // response->size is size of existing mem and real_size is the size recieved and +1 accounts for null
-  char *ptr = (char *)realloc(response->string, response->size + real_size + 1);
+  Response *response = static_cast<Response *>(userData);
+  // Allocate more space for chunk that was received
+  // response->size is size of existing mem and real_size is the size received and +1 accounts for null
+  char *ptr = static_cast<char *>(realloc(response->string, response->size + real_size + 1));
 
   if (ptr == nullptr)
   {
-    std::cerr << "Problem reallocating space for chunk recieved" << std::endl;
+    std::cerr << "Problem reallocating space for chunk received" << std::endl;
     return 0;
   }
-  // set response string to the new (larger) memory address
+  // Set response string to the new (larger) memory address
   response->string = ptr;
-  // append new porition onto existing string
+  // Append new portion onto existing string
   memcpy(&(response->string[response->size]), data, real_size);
-  // update strings size
+  // Update string's size
   response->size += real_size;
-  // append null character
+  // Append null character
   response->string[response->size] = '\0';
   return real_size;
 }
@@ -139,9 +138,9 @@ size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
  * Returns a map containing the following tags stored as keys
  * and their description as their value.
  *
- * title content difficulty topicTags { name } hints
+ * title, content, difficulty, topicTags { name }, hints
  *
- * Assumes json response will use the tags in the given order above.
+ * Assumes JSON response will use the tags in the given order above.
  */
 void formatResponse(char *response)
 {
@@ -195,7 +194,7 @@ void formatResponse(char *response)
   }
 }
 
-// check for <code> tag
+// Check for HTML tags and convert HTML entities to their string equivalents
 std::string FormatHTMLToString(const std::string &response)
 {
   int i = 0;
@@ -282,9 +281,9 @@ std::string FormatHTMLToString(const std::string &response)
 }
 
 /**
- * Basic test cases given by leetcode are given in a string of the form. Example case & output.
+ * Basic test cases given by LeetCode are provided in a string of the form: Example case & output.
  * Should always be at least 2 test cases given.
- * @returns array of oxpected outputs for the test cases.
+ * @returns Array of expected outputs for the test cases.
  */
 TestCaseResponse GetTestCases(const std::string &content)
 {
@@ -339,7 +338,6 @@ TestCaseResponse GetTestCases(const std::string &content)
           {
             tests.testCaseParams.push_back({paramName, paramRes});
           }
-          // std::cout << paramName << " " << paramRes << std::endl;
         }
 
         if (i <= content.length() - 6 && content.substr(i, 6) == "Output")
@@ -371,7 +369,7 @@ TestCaseResponse GetTestCases(const std::string &content)
 
 void CreateJSON(json *response, const TestCaseResponse &tests)
 {
-  // filter out invalid characters from title
+  // Filter out invalid characters from title
   std::string title = (*response)["title"];
   const std::string invalid_chars = "\\/:*?\"<>|";
   for (char c : invalid_chars)
@@ -382,7 +380,7 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
 
   std::ofstream outputJSON;
   outputJSON.open(jsonName);
-  // should have to create the file so always should open
+  // Should be able to create the file, so it should always open
   if (!outputJSON.is_open())
   {
     std::cerr << "Error creating output file for JSON response" << std::endl;
@@ -390,15 +388,13 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
   }
 
   outputJSON << "{\n";
-  // iterates through json response inserting key and value as pair into output file
+  // Iterates through JSON response inserting key and value as pair into output file
   for (auto it = (*response).begin(); it != (*response).end(); ++it)
   {
     outputJSON << "\"" << it.key() << "\"" << ": " << it.value() << ',' << "\n";
   }
 
-  // handle situation where testCases might not generate
-
-  // Insert testcases
+  // Insert test cases
   outputJSON << "\"testCases\"" << ": [" << "\n";
 
   int j = 0;
@@ -408,7 +404,7 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
     // start inserting new object into array inside json file
     outputJSON << "{\n";
 
-    std::string expectedResult = tests.testCases[i]; // testcase expected outputs
+    std::string expectedResult = tests.testCases[i]; // Test case expected outputs
     outputJSON << "\"expectedResult\": " << "\"" << expectedResult << "\",\n";
 
     int numParams = tests.testCaseParams.size() / tests.testCases.size();
@@ -425,7 +421,7 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
       }
     }
 
-    // if i is at the end then we need to close off the obj
+    // If i is at the end then we need to close off the object
     if (i == size - 1)
     {
       outputJSON << "}\n";
@@ -440,35 +436,4 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
 
   outputJSON << "}";
   outputJSON.close();
-}
-
-/**
- * params are taken from the json as a string containing 'paramName'='param'
- * This function splits the paramName and param seperately to label them in the output JSON easier.
- * (the problem function calls explicility used by the users will contain the same paramNames so makes using them easier as well)
- */
-std::pair<std::string, std::string> GetParamName(const std::string &param)
-{
-  std::string paramName = "";
-  std::string paramResult = "";
-  bool nameParsed = false;
-  for (int i = 0; i < param.length(); i++)
-  {
-
-    if (param[i] == '=')
-    {
-      nameParsed = true;
-      continue;
-    }
-
-    if (param[i] != ' ' && !nameParsed)
-    {
-      paramName += param[i];
-    }
-    else if (param[i] != ' ' && nameParsed)
-    {
-      paramResult += param[i];
-    }
-  }
-  return {paramName, paramResult};
 }
