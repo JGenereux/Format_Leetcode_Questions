@@ -1,19 +1,20 @@
 #include <curl/curl.h>
-#include <string.h>
+#include <cstring>
 
-#include <unordered_set>
 #include <iostream>
 #include <fstream>
-#include <map>
+#include <string>
+#include <vector>
+#include <utility>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
-// used to have a dynamic string
-typedef struct Response
+// CURL callback data structure
+struct Response
 {
-  char *string;
-  size_t size;
+  std::string data;
 };
 
 struct TestCaseResponse
@@ -22,14 +23,11 @@ struct TestCaseResponse
   std::vector<std::pair<std::string, std::string>> testCaseParams;
 };
 
-size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData);
-
-void formatResponse(char *response);
-std::string FormatHTMLToString(const std::string &response);
-TestCaseResponse GetTestCases(const std::string &content);
-
-std::pair<std::string, std::string> GetParamName(const std::string &param);
-void CreateJSON(json *response, const TestCaseResponse &testCases);
+size_t writeChunk(void *data, size_t size, size_t nmemb, void *userData);
+void formatResponse(const std::string &response);
+std::string formatHTMLToString(const std::string &response);
+TestCaseResponse getTestCases(const std::string &content);
+void createJSON(const json &response, const TestCaseResponse &testCases);
 
 int main()
 {
@@ -37,24 +35,17 @@ int main()
   std::cout << "Enter Leetcode question name: " << std::endl;
   std::cin >> questionName;
 
-  CURL *curl;
-  CURLcode result;
-
   // Initialize CURL
-  curl = curl_easy_init();
+  CURL *curl = curl_easy_init();
   if (curl == nullptr)
   {
     std::cerr << "HTTP REQUEST FAILED: curl_easy_init() failed!" << std::endl;
     return -1;
   }
-  else
-  {
-    std::cout << "Curl initialized successfully!" << std::endl;
-  }
+
+  std::cout << "Curl initialized successfully!" << std::endl;
 
   Response response;
-  response.string = (char *)malloc(1);
-  response.size = 0;
 
   // Set options for the HTTP request
   curl_easy_setopt(curl, CURLOPT_URL,
@@ -80,70 +71,55 @@ int main()
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   /**
    * WriteFunction allows for specifying a callback function
-   * Curl_easy_perfrom will call this function repeatedly
-   * Each time it is called the pointer is passed to a new chunk of response
-   * string
+   * curl_easy_perform will call this function repeatedly
+   * Each time it is called the pointer is passed to a new chunk of response data
    */
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_chunk);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeChunk);
 
-  // Address of response string is passed in write_chunk as userData
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&response);
+  // Address of response struct is passed in writeChunk as userData
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, static_cast<void *>(&response));
 
   // Perform the HTTP request
-  result = curl_easy_perform(curl);
+  CURLcode result = curl_easy_perform(curl);
   if (result != CURLE_OK)
   {
     std::cerr << "Error: " << curl_easy_strerror(result) << std::endl;
     curl_easy_cleanup(curl);
+    curl_slist_free_all(headers);
     return -1;
   }
 
-  formatResponse(response.string);
-  free(response.string);
+  formatResponse(response.data);
+
   // Cleanup
   curl_easy_cleanup(curl);
+  curl_slist_free_all(headers);
   return 0;
 }
 
-// returns number of bytes in the chunk
-//  data is set to a ptr that points to block of data recieved in this chunk
-//  nmemb is the number of bytes in the block of data
-// userData points to what we want (points to where the response string is stored)
-size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
+/**
+ * CURL callback function to write received data
+ * @param data Pointer to the received data chunk
+ * @param size Size of each element (typically 1)
+ * @param nmemb Number of elements
+ * @param userData Pointer to Response structure
+ * @return Number of bytes processed
+ */
+size_t writeChunk(void *data, size_t size, size_t nmemb, void *userData)
 {
-  // size is always 1
-  size_t real_size = size * nmemb;
-
-  Response *response = (Response *)userData;
-  // allocate more space for chunk that was recieved
-  // response->size is size of existing mem and real_size is the size recieved and +1 accounts for null
-  char *ptr = (char *)realloc(response->string, response->size + real_size + 1);
-
-  if (ptr == nullptr)
-  {
-    std::cerr << "Problem reallocating space for chunk recieved" << std::endl;
-    return 0;
-  }
-  // set response string to the new (larger) memory address
-  response->string = ptr;
-  // append new porition onto existing string
-  memcpy(&(response->string[response->size]), data, real_size);
-  // update strings size
-  response->size += real_size;
-  // append null character
-  response->string[response->size] = '\0';
-  return real_size;
+  size_t realSize = size * nmemb;
+  Response *response = static_cast<Response *>(userData);
+  
+  response->data.append(static_cast<char *>(data), realSize);
+  return realSize;
 }
 
 /**
- * Returns a map containing the following tags stored as keys
- * and their description as their value.
- *
- * title content difficulty topicTags { name } hints
- *
- * Assumes json response will use the tags in the given order above.
+ * Processes the JSON response from LeetCode GraphQL API
+ * Extracts and formats: title, content, difficulty, topicTags, and hints
+ * @param response Raw JSON response string
  */
-void formatResponse(char *response)
+void formatResponse(const std::string &response)
 {
   std::vector<std::string> currentTags = {"title", "content", "difficulty", "topicTags", "hints"};
 
@@ -172,21 +148,21 @@ void formatResponse(char *response)
         {
           continue;
         }
-        question[tag][0] = FormatHTMLToString(question[tag][0]);
+        question[tag][0] = formatHTMLToString(question[tag][0]);
         continue;
       }
       if (question.contains(tag))
       {
-        question[tag] = FormatHTMLToString(question[tag]);
-        // Get testcases from given content
+        question[tag] = formatHTMLToString(question[tag]);
+        // Get test cases from given content
         if (tag == "content")
         {
-          testCases = GetTestCases(question[tag]);
+          testCases = getTestCases(question[tag]);
         }
       }
     }
 
-    CreateJSON(&question, testCases);
+    createJSON(question, testCases);
   }
   catch (json::parse_error &e)
   {
@@ -195,11 +171,17 @@ void formatResponse(char *response)
   }
 }
 
-// check for <code> tag
-std::string FormatHTMLToString(const std::string &response)
+/**
+ * Converts HTML entities and removes HTML tags from string
+ * Handles: <tags>, &lt;, &gt;, &amp;, &#39;s, &nbsp;
+ * @param response HTML string to format
+ * @return Cleaned string without HTML
+ */
+std::string formatHTMLToString(const std::string &response)
 {
-  int i = 0;
-  std::string result = "";
+  std::string result;
+  result.reserve(response.length());
+  size_t i = 0;
 
   while (i < response.length())
   {
@@ -214,39 +196,41 @@ std::string FormatHTMLToString(const std::string &response)
       continue;
     }
 
-    // check for &lt; (<) , &gt (>);
-    if (i < response.length() - 4 && (response.substr(i, 4) == "&lt;" || response.substr(i, 4) == "&gt;"))
+    // check for &lt; (<) , &gt; (>)
+    if (i + 4 <= response.length())
     {
       std::string expression = response.substr(i, 4);
       if (expression == "&lt;")
       {
         result += "<";
+        i += 4;
+        continue;
       }
       else if (expression == "&gt;")
       {
         result += ">";
+        i += 4;
+        continue;
       }
-      i += 4;
-      continue;
     }
 
-    // check for &amp (&)
-    if (i < response.length() - 5 && (response.substr(i, 5) == "&amp;"))
+    // check for &amp; (&)
+    if (i + 5 <= response.length() && response.substr(i, 5) == "&amp;")
     {
       result += "&";
       i += 5;
       continue;
     }
 
-    // check for &#39;s
-    if (i < response.length() - 6 && response.substr(i, 6) == "&#39;s")
+    // check for &#39;s (possessive apostrophe)
+    if (i + 6 <= response.length() && response.substr(i, 6) == "&#39;s")
     {
       i += 6;
       continue;
     }
 
-    // check for &nbsp; tags
-    if (i < response.length() - 6 && response.substr(i, 6) == "&nbsp;")
+    // check for &nbsp; (non-breaking space)
+    if (i + 6 <= response.length() && response.substr(i, 6) == "&nbsp;")
     {
       i += 6;
       continue;
@@ -282,35 +266,35 @@ std::string FormatHTMLToString(const std::string &response)
 }
 
 /**
- * Basic test cases given by leetcode are given in a string of the form. Example case & output.
- * Should always be at least 2 test cases given.
- * @returns array of oxpected outputs for the test cases.
+ * Extracts test cases from LeetCode problem content
+ * Parses Example sections containing Input and Output
+ * @param content Problem content string
+ * @return TestCaseResponse containing test cases and parameters
  */
-TestCaseResponse GetTestCases(const std::string &content)
+TestCaseResponse getTestCases(const std::string &content)
 {
   TestCaseResponse tests;
 
-  int i = 0;
+  size_t i = 0;
   while (i < content.length())
   {
-    if (i < content.length() - 7 && content.substr(i, 7) == "Example")
+    if (i + 7 <= content.length() && content.substr(i, 7) == "Example")
     {
       i += 7;
       while (i < content.length())
       {
-        if (i <= content.length() - 6 && content.substr(i, 6) == "Input:")
+        if (i + 6 <= content.length() && content.substr(i, 6) == "Input:")
         {
           i += 6;
-          std::string input = "";
-          std::string paramName = "";
-          std::string paramRes = "";
+          std::string paramName;
+          std::string paramRes;
           int j = -1;
-          while (i < content.length() - 7 && content.substr(i, 7) != "\nOutput")
+          while (i + 7 <= content.length() && content.substr(i, 7) != "\nOutput")
           {
             // check if new param is being searched
             if (i < content.length() - 1 && (content[i] == ',' && content[i + 1] == ' '))
             {
-              tests.testCaseParams.push_back({paramName, paramRes});
+              tests.testCaseParams.emplace_back(paramName, paramRes);
               paramName = "";
               paramRes = "";
               j = -1;
@@ -335,17 +319,16 @@ TestCaseResponse GetTestCases(const std::string &content)
             }
             i++;
           }
-          if (paramName.length() != 0 && paramRes.length() != 0)
+          if (!paramName.empty() && !paramRes.empty())
           {
-            tests.testCaseParams.push_back({paramName, paramRes});
+            tests.testCaseParams.emplace_back(paramName, paramRes);
           }
-          // std::cout << paramName << " " << paramRes << std::endl;
         }
 
-        if (i <= content.length() - 6 && content.substr(i, 6) == "Output")
+        if (i + 6 <= content.length() && content.substr(i, 6) == "Output")
         {
           i += 6;
-          std::string testCase = "";
+          std::string testCase;
           while (i < content.length() && content[i] != '\n')
           {
             if (content[i] != ' ' && content[i] != ':')
@@ -369,20 +352,23 @@ TestCaseResponse GetTestCases(const std::string &content)
   return tests;
 }
 
-void CreateJSON(json *response, const TestCaseResponse &tests)
+/**
+ * Creates a JSON output file with the problem details and test cases
+ * @param response JSON object containing problem data
+ * @param tests TestCaseResponse with test cases and parameters
+ */
+void createJSON(const json &response, const TestCaseResponse &tests)
 {
-  // filter out invalid characters from title
-  std::string title = (*response)["title"];
-  const std::string invalid_chars = "\\/:*?\"<>|";
-  for (char c : invalid_chars)
+  // Filter out invalid characters from title for filename
+  std::string title = response["title"];
+  const std::string invalidChars = "\\/:*?\"<>|";
+  for (char c : invalidChars)
   {
     std::replace(title.begin(), title.end(), c, '_');
   }
   std::string jsonName = "../../../Questions/" + title + ".txt";
 
-  std::ofstream outputJSON;
-  outputJSON.open(jsonName);
-  // should have to create the file so always should open
+  std::ofstream outputJSON(jsonName);
   if (!outputJSON.is_open())
   {
     std::cerr << "Error creating output file for JSON response" << std::endl;
@@ -390,85 +376,48 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
   }
 
   outputJSON << "{\n";
-  // iterates through json response inserting key and value as pair into output file
-  for (auto it = (*response).begin(); it != (*response).end(); ++it)
+  // Iterate through JSON response inserting key and value pairs
+  for (auto it = response.begin(); it != response.end(); ++it)
   {
-    outputJSON << "\"" << it.key() << "\"" << ": " << it.value() << ',' << "\n";
+    outputJSON << "\"" << it.key() << "\"" << ": " << it.value() << ",\n";
   }
 
-  // handle situation where testCases might not generate
-
-  // Insert testcases
+  // Insert test cases
   outputJSON << "\"testCases\"" << ": [" << "\n";
 
-  int j = 0;
-  int size = tests.testCases.size();
-  for (int i = 0; i < size; i++)
+  size_t j = 0;
+  size_t size = tests.testCases.size();
+  for (size_t i = 0; i < size; i++)
   {
-    // start inserting new object into array inside json file
+    // Start inserting new object into array
     outputJSON << "{\n";
 
-    std::string expectedResult = tests.testCases[i]; // testcase expected outputs
-    outputJSON << "\"expectedResult\": " << "\"" << expectedResult << "\",\n";
+    const std::string &expectedResult = tests.testCases[i];
+    outputJSON << "\"expectedResult\": \"" << expectedResult << "\",\n";
 
-    int numParams = tests.testCaseParams.size() / tests.testCases.size();
-    for (int x = 0; x < numParams; x++)
+    size_t numParams = tests.testCases.empty() ? 0 : tests.testCaseParams.size() / tests.testCases.size();
+    for (size_t x = 0; x < numParams; x++)
     {
-      std::pair<std::string, std::string> fixedParam = tests.testCaseParams[j++];
-      if (x == numParams - 1)
+      const auto &fixedParam = tests.testCaseParams[j++];
+      outputJSON << "\"" << fixedParam.first << "\": \"" << fixedParam.second << "\"";
+      if (x < numParams - 1)
       {
-        outputJSON << "\"" << fixedParam.first << "\": " << "\"" << fixedParam.second << "\"\n";
+        outputJSON << ",";
       }
-      else
-      {
-        outputJSON << "\"" << fixedParam.first << "\": " << "\"" << fixedParam.second << "\",\n";
-      }
+      outputJSON << "\n";
     }
 
-    // if i is at the end then we need to close off the obj
-    if (i == size - 1)
+    // Close the test case object
+    outputJSON << "}";
+    if (i < size - 1)
     {
-      outputJSON << "}\n";
+      outputJSON << ",";
     }
-    else
-    {
-      outputJSON << "},\n";
-    }
+    outputJSON << "\n";
   }
 
   outputJSON << "]\n";
 
   outputJSON << "}";
   outputJSON.close();
-}
-
-/**
- * params are taken from the json as a string containing 'paramName'='param'
- * This function splits the paramName and param seperately to label them in the output JSON easier.
- * (the problem function calls explicility used by the users will contain the same paramNames so makes using them easier as well)
- */
-std::pair<std::string, std::string> GetParamName(const std::string &param)
-{
-  std::string paramName = "";
-  std::string paramResult = "";
-  bool nameParsed = false;
-  for (int i = 0; i < param.length(); i++)
-  {
-
-    if (param[i] == '=')
-    {
-      nameParsed = true;
-      continue;
-    }
-
-    if (param[i] != ' ' && !nameParsed)
-    {
-      paramName += param[i];
-    }
-    else if (param[i] != ' ' && nameParsed)
-    {
-      paramResult += param[i];
-    }
-  }
-  return {paramName, paramResult};
 }
