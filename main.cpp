@@ -1,10 +1,8 @@
 #include <curl/curl.h>
 #include <string.h>
 
-#include <unordered_set>
 #include <iostream>
 #include <fstream>
-#include <map>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -27,8 +25,6 @@ size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData);
 void formatResponse(char *response);
 std::string FormatHTMLToString(const std::string &response);
 TestCaseResponse GetTestCases(const std::string &content);
-
-std::pair<std::string, std::string> GetParamName(const std::string &param);
 void CreateJSON(json *response, const TestCaseResponse &testCases);
 
 int main()
@@ -106,7 +102,7 @@ int main()
 }
 
 // returns number of bytes in the chunk
-//  data is set to a ptr that points to block of data recieved in this chunk
+//  data is set to a ptr that points to block of data received in this chunk
 //  nmemb is the number of bytes in the block of data
 // userData points to what we want (points to where the response string is stored)
 size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
@@ -115,13 +111,13 @@ size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
   size_t real_size = size * nmemb;
 
   Response *response = (Response *)userData;
-  // allocate more space for chunk that was recieved
-  // response->size is size of existing mem and real_size is the size recieved and +1 accounts for null
+  // allocate more space for chunk that was received
+  // response->size is size of existing mem and real_size is the size received and +1 accounts for null
   char *ptr = (char *)realloc(response->string, response->size + real_size + 1);
 
   if (ptr == nullptr)
   {
-    std::cerr << "Problem reallocating space for chunk recieved" << std::endl;
+    std::cerr << "Problem reallocating space for chunk received" << std::endl;
     return 0;
   }
   // set response string to the new (larger) memory address
@@ -284,7 +280,7 @@ std::string FormatHTMLToString(const std::string &response)
 /**
  * Basic test cases given by leetcode are given in a string of the form. Example case & output.
  * Should always be at least 2 test cases given.
- * @returns array of oxpected outputs for the test cases.
+ * @returns array of expected outputs for the test cases.
  */
 TestCaseResponse GetTestCases(const std::string &content)
 {
@@ -339,7 +335,6 @@ TestCaseResponse GetTestCases(const std::string &content)
           {
             tests.testCaseParams.push_back({paramName, paramRes});
           }
-          // std::cout << paramName << " " << paramRes << std::endl;
         }
 
         if (i <= content.length() - 6 && content.substr(i, 6) == "Output")
@@ -440,35 +435,4 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
 
   outputJSON << "}";
   outputJSON.close();
-}
-
-/**
- * params are taken from the json as a string containing 'paramName'='param'
- * This function splits the paramName and param seperately to label them in the output JSON easier.
- * (the problem function calls explicility used by the users will contain the same paramNames so makes using them easier as well)
- */
-std::pair<std::string, std::string> GetParamName(const std::string &param)
-{
-  std::string paramName = "";
-  std::string paramResult = "";
-  bool nameParsed = false;
-  for (int i = 0; i < param.length(); i++)
-  {
-
-    if (param[i] == '=')
-    {
-      nameParsed = true;
-      continue;
-    }
-
-    if (param[i] != ' ' && !nameParsed)
-    {
-      paramName += param[i];
-    }
-    else if (param[i] != ' ' && nameParsed)
-    {
-      paramResult += param[i];
-    }
-  }
-  return {paramName, paramResult};
 }
