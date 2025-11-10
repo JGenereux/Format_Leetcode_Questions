@@ -1,0 +1,1 @@
+/usr/bin/c++ -g CMakeFiles/main.dir/main.cpp.o -o main  libutils.a /usr/lib/x86_64-linux-gnu/libcurl.so 

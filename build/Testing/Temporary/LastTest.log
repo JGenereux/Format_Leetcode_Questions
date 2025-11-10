@@ -1,0 +1,76 @@
+Start testing: Nov 10 05:50 UTC
+----------------------------------------------------------
+1/1 Testing: UtilsTests
+1/1 Test: UtilsTests
+Command: "/workspace/build/test_main"
+Directory: /workspace/build
+"UtilsTests" start time: Nov 10 05:50 UTC
+Output:
+----------------------------------------------------------
+[==========] Running 22 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 11 tests from FormatHTMLToStringTest
+[ RUN      ] FormatHTMLToStringTest.RemovesSimpleHTMLTags
+[       OK ] FormatHTMLToStringTest.RemovesSimpleHTMLTags (0 ms)
+[ RUN      ] FormatHTMLToStringTest.RemovesNestedHTMLTags
+[       OK ] FormatHTMLToStringTest.RemovesNestedHTMLTags (0 ms)
+[ RUN      ] FormatHTMLToStringTest.ConvertsHTMLEntities
+[       OK ] FormatHTMLToStringTest.ConvertsHTMLEntities (0 ms)
+[ RUN      ] FormatHTMLToStringTest.ConvertsMultipleHTMLEntities
+[       OK ] FormatHTMLToStringTest.ConvertsMultipleHTMLEntities (0 ms)
+[ RUN      ] FormatHTMLToStringTest.ConvertsAmpersandEntity
+[       OK ] FormatHTMLToStringTest.ConvertsAmpersandEntity (0 ms)
+[ RUN      ] FormatHTMLToStringTest.RemovesNBSP
+[       OK ] FormatHTMLToStringTest.RemovesNBSP (0 ms)
+[ RUN      ] FormatHTMLToStringTest.HandlesMultipleNewlines
+[       OK ] FormatHTMLToStringTest.HandlesMultipleNewlines (0 ms)
+[ RUN      ] FormatHTMLToStringTest.RemovesMultipleTabs
+[       OK ] FormatHTMLToStringTest.RemovesMultipleTabs (0 ms)
+[ RUN      ] FormatHTMLToStringTest.HandlesEmptyString
+[       OK ] FormatHTMLToStringTest.HandlesEmptyString (0 ms)
+[ RUN      ] FormatHTMLToStringTest.HandlesComplexHTML
+[       OK ] FormatHTMLToStringTest.HandlesComplexHTML (0 ms)
+[ RUN      ] FormatHTMLToStringTest.RemovesApostropheS
+[       OK ] FormatHTMLToStringTest.RemovesApostropheS (0 ms)
+[----------] 11 tests from FormatHTMLToStringTest (0 ms total)
+
+[----------] 5 tests from GetTestCasesTest
+[ RUN      ] GetTestCasesTest.ParsesSingleTestCase
+[       OK ] GetTestCasesTest.ParsesSingleTestCase (0 ms)
+[ RUN      ] GetTestCasesTest.ParsesMultipleTestCases
+[       OK ] GetTestCasesTest.ParsesMultipleTestCases (0 ms)
+[ RUN      ] GetTestCasesTest.HandlesEmptyContent
+[       OK ] GetTestCasesTest.HandlesEmptyContent (0 ms)
+[ RUN      ] GetTestCasesTest.HandlesContentWithoutExamples
+[       OK ] GetTestCasesTest.HandlesContentWithoutExamples (0 ms)
+[ RUN      ] GetTestCasesTest.HandlesSingleParameter
+[       OK ] GetTestCasesTest.HandlesSingleParameter (0 ms)
+[----------] 5 tests from GetTestCasesTest (0 ms total)
+
+[----------] 6 tests from GetParamNameTest
+[ RUN      ] GetParamNameTest.ParsesSimpleParam
+[       OK ] GetParamNameTest.ParsesSimpleParam (0 ms)
+[ RUN      ] GetParamNameTest.ParsesParamWithSpaces
+[       OK ] GetParamNameTest.ParsesParamWithSpaces (0 ms)
+[ RUN      ] GetParamNameTest.ParsesParamWithoutSpaces
+[       OK ] GetParamNameTest.ParsesParamWithoutSpaces (0 ms)
+[ RUN      ] GetParamNameTest.ParsesComplexArrayParam
+[       OK ] GetParamNameTest.ParsesComplexArrayParam (0 ms)
+[ RUN      ] GetParamNameTest.HandlesEmptyString
+[       OK ] GetParamNameTest.HandlesEmptyString (0 ms)
+[ RUN      ] GetParamNameTest.HandlesStringParam
+[       OK ] GetParamNameTest.HandlesStringParam (0 ms)
+[----------] 6 tests from GetParamNameTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 22 tests from 3 test suites ran. (0 ms total)
+[  PASSED  ] 22 tests.
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"UtilsTests" end time: Nov 10 05:50 UTC
+"UtilsTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 10 05:50 UTC
