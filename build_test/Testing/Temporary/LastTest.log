@@ -1,0 +1,95 @@
+Start testing: Nov 12 10:55 UTC
+----------------------------------------------------------
+1/1 Testing: MainTests
+1/1 Test: MainTests
+Command: "/workspace/build_test/test_main"
+Directory: /workspace/build_test
+"MainTests" start time: Nov 12 10:55 UTC
+Output:
+----------------------------------------------------------
+[==========] Running 30 tests from 4 test suites.
+[----------] Global test environment set-up.
+[----------] 12 tests from FormatHTMLTest
+[ RUN      ] FormatHTMLTest.RemovesSimpleHTMLTags
+[       OK ] FormatHTMLTest.RemovesSimpleHTMLTags (0 ms)
+[ RUN      ] FormatHTMLTest.RemovesNestedHTMLTags
+[       OK ] FormatHTMLTest.RemovesNestedHTMLTags (0 ms)
+[ RUN      ] FormatHTMLTest.ConvertsLessThanEntity
+[       OK ] FormatHTMLTest.ConvertsLessThanEntity (0 ms)
+[ RUN      ] FormatHTMLTest.ConvertsGreaterThanEntity
+[       OK ] FormatHTMLTest.ConvertsGreaterThanEntity (0 ms)
+[ RUN      ] FormatHTMLTest.ConvertsAmpersandEntity
+[       OK ] FormatHTMLTest.ConvertsAmpersandEntity (0 ms)
+[ RUN      ] FormatHTMLTest.RemovesApostropheSEntity
+[       OK ] FormatHTMLTest.RemovesApostropheSEntity (0 ms)
+[ RUN      ] FormatHTMLTest.RemovesNonBreakingSpace
+[       OK ] FormatHTMLTest.RemovesNonBreakingSpace (0 ms)
+[ RUN      ] FormatHTMLTest.CollapsesMultipleNewlines
+[       OK ] FormatHTMLTest.CollapsesMultipleNewlines (0 ms)
+[ RUN      ] FormatHTMLTest.RemovesTabs
+[       OK ] FormatHTMLTest.RemovesTabs (0 ms)
+[ RUN      ] FormatHTMLTest.HandlesComplexMixedContent
+[       OK ] FormatHTMLTest.HandlesComplexMixedContent (0 ms)
+[ RUN      ] FormatHTMLTest.HandlesEmptyString
+[       OK ] FormatHTMLTest.HandlesEmptyString (0 ms)
+[ RUN      ] FormatHTMLTest.HandlesPlainTextWithoutHTML
+[       OK ] FormatHTMLTest.HandlesPlainTextWithoutHTML (0 ms)
+[----------] 12 tests from FormatHTMLTest (0 ms total)
+
+[----------] 6 tests from GetTestCasesTest
+[ RUN      ] GetTestCasesTest.ParsesSingleTestCase
+[       OK ] GetTestCasesTest.ParsesSingleTestCase (0 ms)
+[ RUN      ] GetTestCasesTest.ParsesMultipleTestCases
+[       OK ] GetTestCasesTest.ParsesMultipleTestCases (0 ms)
+[ RUN      ] GetTestCasesTest.ParsesMultipleParameters
+[       OK ] GetTestCasesTest.ParsesMultipleParameters (0 ms)
+[ RUN      ] GetTestCasesTest.HandlesContentWithoutExamples
+[       OK ] GetTestCasesTest.HandlesContentWithoutExamples (0 ms)
+[ RUN      ] GetTestCasesTest.HandlesEmptyString
+[       OK ] GetTestCasesTest.HandlesEmptyString (0 ms)
+[ RUN      ] GetTestCasesTest.ParsesArrayOutputs
+[       OK ] GetTestCasesTest.ParsesArrayOutputs (0 ms)
+[----------] 6 tests from GetTestCasesTest (0 ms total)
+
+[----------] 7 tests from GetParamNameTest
+[ RUN      ] GetParamNameTest.ParsesSimpleParameter
+[       OK ] GetParamNameTest.ParsesSimpleParameter (0 ms)
+[ RUN      ] GetParamNameTest.HandlesSpacesAroundEquals
+[       OK ] GetParamNameTest.HandlesSpacesAroundEquals (0 ms)
+[ RUN      ] GetParamNameTest.ParsesStringParameter
+[       OK ] GetParamNameTest.ParsesStringParameter (0 ms)
+[ RUN      ] GetParamNameTest.ParsesNestedArrayParameter
+[       OK ] GetParamNameTest.ParsesNestedArrayParameter (0 ms)
+[ RUN      ] GetParamNameTest.HandlesNoSpaces
+[       OK ] GetParamNameTest.HandlesNoSpaces (0 ms)
+[ RUN      ] GetParamNameTest.HandlesEmptyValue
+[       OK ] GetParamNameTest.HandlesEmptyValue (0 ms)
+[ RUN      ] GetParamNameTest.HandlesLongParameterName
+[       OK ] GetParamNameTest.HandlesLongParameterName (0 ms)
+[----------] 7 tests from GetParamNameTest (0 ms total)
+
+[----------] 5 tests from WriteChunkTest
+[ RUN      ] WriteChunkTest.WritesFirstChunk
+[       OK ] WriteChunkTest.WritesFirstChunk (0 ms)
+[ RUN      ] WriteChunkTest.AppendsMultipleChunks
+[       OK ] WriteChunkTest.AppendsMultipleChunks (0 ms)
+[ RUN      ] WriteChunkTest.HandlesEmptyChunk
+[       OK ] WriteChunkTest.HandlesEmptyChunk (0 ms)
+[ RUN      ] WriteChunkTest.HandlesLargeChunk
+[       OK ] WriteChunkTest.HandlesLargeChunk (0 ms)
+[ RUN      ] WriteChunkTest.CalculatesRealSizeCorrectly
+[       OK ] WriteChunkTest.CalculatesRealSizeCorrectly (0 ms)
+[----------] 5 tests from WriteChunkTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 30 tests from 4 test suites ran. (0 ms total)
+[  PASSED  ] 30 tests.
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"MainTests" end time: Nov 12 10:55 UTC
+"MainTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 12 10:55 UTC
