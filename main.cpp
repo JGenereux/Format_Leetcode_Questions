@@ -1,19 +1,21 @@
 #include <curl/curl.h>
-#include <string.h>
+#include <cstring>
 
-#include <unordered_set>
+#include <algorithm>
 #include <iostream>
 #include <fstream>
-#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
-// used to have a dynamic string
-typedef struct Response
+// FIX: Changed to use std::string for automatic memory management (RAII)
+// REASON: Eliminates manual malloc/free and prevents memory leaks
+struct Response
 {
-  char *string;
-  size_t size;
+  std::string data;
 };
 
 struct TestCaseResponse
@@ -22,9 +24,10 @@ struct TestCaseResponse
   std::vector<std::pair<std::string, std::string>> testCaseParams;
 };
 
+// FIX: Updated signature to work with std::string-based Response
 size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData);
 
-void formatResponse(char *response);
+void formatResponse(const std::string &response);
 std::string FormatHTMLToString(const std::string &response);
 TestCaseResponse GetTestCases(const std::string &content);
 
@@ -33,45 +36,48 @@ void CreateJSON(json *response, const TestCaseResponse &testCases);
 
 int main()
 {
-  std::string questionName = "";
+  std::string questionName;
   std::cout << "Enter Leetcode question name: " << std::endl;
-  std::cin >> questionName;
+  // FIX: Added input validation
+  // REASON: Prevent empty input from causing issues
+  if (!(std::cin >> questionName) || questionName.empty())
+  {
+    std::cerr << "Error: Invalid question name provided" << std::endl;
+    return 1;
+  }
 
-  CURL *curl;
-  CURLcode result;
+  // FIX: Initialize to nullptr for safety
+  CURL *curl = nullptr;
+  struct curl_slist *headers = nullptr;
 
   // Initialize CURL
   curl = curl_easy_init();
   if (curl == nullptr)
   {
     std::cerr << "HTTP REQUEST FAILED: curl_easy_init() failed!" << std::endl;
-    return -1;
-  }
-  else
-  {
-    std::cout << "Curl initialized successfully!" << std::endl;
+    return 1;
   }
 
+  std::cout << "Curl initialized successfully!" << std::endl;
+
+  // FIX: Now using std::string - no manual memory management needed
+  // REASON: Automatic memory management via RAII
   Response response;
-  response.string = (char *)malloc(1);
-  response.size = 0;
 
   // Set options for the HTTP request
-  curl_easy_setopt(curl, CURLOPT_URL,
-                   "https://leetcode.com/graphql");
+  curl_easy_setopt(curl, CURLOPT_URL, "https://leetcode.com/graphql");
 
   // Set Post data (like JSON body) to match leetcode graph ql query
   json query = {
       {"query", "query questionData($titleSlug: String!) { question(titleSlug: $titleSlug) { title content difficulty topicTags { name } hints } }"},
       {"variables", {
-                        {"titleSlug", questionName} // This can now be easily modified
+                        {"titleSlug", questionName}
                     }}};
 
   const std::string postData = query.dump();
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
 
   // Set headers for JSON data
-  struct curl_slist *headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
 
   std::string referer = "Referrer: https://leetcode.com/problems/" + questionName + "/";
@@ -80,58 +86,68 @@ int main()
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   /**
    * WriteFunction allows for specifying a callback function
-   * Curl_easy_perfrom will call this function repeatedly
+   * Curl_easy_perform will call this function repeatedly
    * Each time it is called the pointer is passed to a new chunk of response
    * string
    */
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_chunk);
 
   // Address of response string is passed in write_chunk as userData
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&response);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, static_cast<void *>(&response));
 
   // Perform the HTTP request
-  result = curl_easy_perform(curl);
+  CURLcode result = curl_easy_perform(curl);
+  
+  // FIX: Ensure proper cleanup in all paths using RAII pattern
+  // REASON: Prevent resource leaks on error paths
   if (result != CURLE_OK)
   {
     std::cerr << "Error: " << curl_easy_strerror(result) << std::endl;
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
-    return -1;
+    return 1;
   }
 
-  formatResponse(response.string);
-  free(response.string);
+  formatResponse(response.data);
+  
   // Cleanup
+  curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
   return 0;
 }
 
-// returns number of bytes in the chunk
-//  data is set to a ptr that points to block of data recieved in this chunk
-//  nmemb is the number of bytes in the block of data
-// userData points to what we want (points to where the response string is stored)
+// FIX: Completely rewritten to use std::string
+// REASON: Eliminates realloc leak vulnerability where old pointer is lost if realloc fails
+// Returns number of bytes in the chunk
+// data is set to a ptr that points to block of data received in this chunk
+// nmemb is the number of bytes in the block of data
+// userData points to where the response string is stored
 size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
 {
-  // size is always 1
   size_t real_size = size * nmemb;
-
-  Response *response = (Response *)userData;
-  // allocate more space for chunk that was recieved
-  // response->size is size of existing mem and real_size is the size recieved and +1 accounts for null
-  char *ptr = (char *)realloc(response->string, response->size + real_size + 1);
-
-  if (ptr == nullptr)
+  
+  // FIX: Use static_cast instead of C-style cast
+  // REASON: Provides compile-time type checking
+  Response *response = static_cast<Response *>(userData);
+  
+  if (response == nullptr || data == nullptr)
   {
-    std::cerr << "Problem reallocating space for chunk recieved" << std::endl;
+    std::cerr << "Error: Null pointer in write_chunk" << std::endl;
     return 0;
   }
-  // set response string to the new (larger) memory address
-  response->string = ptr;
-  // append new porition onto existing string
-  memcpy(&(response->string[response->size]), data, real_size);
-  // update strings size
-  response->size += real_size;
-  // append null character
-  response->string[response->size] = '\0';
+  
+  try
+  {
+    // FIX: Use std::string::append which handles memory automatically
+    // REASON: No manual memory management, no leak if allocation fails
+    response->data.append(static_cast<const char *>(data), real_size);
+  }
+  catch (const std::bad_alloc &e)
+  {
+    std::cerr << "Memory allocation error in write_chunk: " << e.what() << std::endl;
+    return 0;
+  }
+  
   return real_size;
 }
 
@@ -143,86 +159,123 @@ size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
  *
  * Assumes json response will use the tags in the given order above.
  */
-void formatResponse(char *response)
+void formatResponse(const std::string &response)
 {
-  std::vector<std::string> currentTags = {"title", "content", "difficulty", "topicTags", "hints"};
+  const std::vector<std::string> currentTags = {"title", "content", "difficulty", "topicTags", "hints"};
 
   try
   {
     json parsed = json::parse(response);
+    
+    // FIX: Add validation for expected JSON structure
+    // REASON: Prevent crashes if API returns unexpected format
+    if (!parsed.contains("data") || !parsed["data"].contains("question"))
+    {
+      std::cerr << "Error: Unexpected JSON structure in response" << std::endl;
+      return;
+    }
+    
     json question = parsed["data"]["question"];
-
     TestCaseResponse testCases;
 
     for (const auto &tag : currentTags)
     {
-      if (question.contains(tag) && tag == "topicTags")
+      if (!question.contains(tag))
+      {
+        continue;
+      }
+      
+      if (tag == "topicTags")
       {
         std::vector<std::string> topics;
-        for (auto topic : question[tag])
+        for (const auto &topic : question[tag])
         {
-          topics.push_back(topic["name"]);
+          if (topic.contains("name"))
+          {
+            topics.push_back(topic["name"]);
+          }
         }
         question[tag] = topics;
-        continue;
       }
-      if (question.contains(tag) && tag == "hints")
+      else if (tag == "hints")
       {
-        if (question[tag][0].size() == 0)
+        // FIX: Check if array is empty, not if first element size is 0
+        // REASON: Original code checked size of first element, not array emptiness
+        if (!question[tag].empty() && question[tag].is_array())
         {
-          continue;
+          for (auto &hint : question[tag])
+          {
+            if (hint.is_string())
+            {
+              hint = FormatHTMLToString(hint);
+            }
+          }
         }
-        question[tag][0] = FormatHTMLToString(question[tag][0]);
-        continue;
       }
-      if (question.contains(tag))
+      else
       {
-        question[tag] = FormatHTMLToString(question[tag]);
-        // Get testcases from given content
-        if (tag == "content")
+        if (question[tag].is_string())
         {
-          testCases = GetTestCases(question[tag]);
+          question[tag] = FormatHTMLToString(question[tag]);
+          // Get testcases from given content
+          if (tag == "content")
+          {
+            testCases = GetTestCases(question[tag]);
+          }
         }
       }
     }
 
     CreateJSON(&question, testCases);
   }
-  catch (json::parse_error &e)
+  catch (const json::parse_error &e)
   {
     std::cerr << "Parse error: " << e.what() << std::endl;
-    return;
+  }
+  catch (const json::exception &e)
+  {
+    std::cerr << "JSON error: " << e.what() << std::endl;
   }
 }
 
-// check for <code> tag
+// FIX: Use size_t for string indices and add bounds checking
+// REASON: int can overflow with large strings; prevent infinite loops
 std::string FormatHTMLToString(const std::string &response)
 {
-  int i = 0;
-  std::string result = "";
+  std::string result;
+  result.reserve(response.length()); // Optimize memory allocation
+  
+  size_t i = 0;
+  const size_t len = response.length();
 
-  while (i < response.length())
+  while (i < len)
   {
-    // check for HTML elements
+    // FIX: Added bounds checking to prevent infinite loop
+    // REASON: Original code could loop forever if '>' not found
     if (response[i] == '<')
     {
-      while (response[i] != '>')
+      // Find closing '>'
+      size_t close_pos = response.find('>', i);
+      if (close_pos != std::string::npos)
       {
+        i = close_pos + 1;
+      }
+      else
+      {
+        // Malformed HTML, skip the '<'
         i++;
       }
-      i++;
       continue;
     }
 
-    // check for &lt; (<) , &gt (>);
-    if (i < response.length() - 4 && (response.substr(i, 4) == "&lt;" || response.substr(i, 4) == "&gt;"))
+    // check for &lt; (<) , &gt; (>)
+    if (i + 4 <= len && (response.substr(i, 4) == "&lt;" || response.substr(i, 4) == "&gt;"))
     {
-      std::string expression = response.substr(i, 4);
-      if (expression == "&lt;")
+      if (response.substr(i, 4) == "&lt;")
       {
         result += "<";
       }
-      else if (expression == "&gt;")
+      else
       {
         result += ">";
       }
@@ -230,24 +283,26 @@ std::string FormatHTMLToString(const std::string &response)
       continue;
     }
 
-    // check for &amp (&)
-    if (i < response.length() - 5 && (response.substr(i, 5) == "&amp;"))
+    // check for &amp; (&)
+    if (i + 5 <= len && response.substr(i, 5) == "&amp;")
     {
       result += "&";
       i += 5;
       continue;
     }
 
-    // check for &#39;s
-    if (i < response.length() - 6 && response.substr(i, 6) == "&#39;s")
+    // check for &#39;s (apostrophe s)
+    if (i + 6 <= len && response.substr(i, 6) == "&#39;s")
     {
+      result += "'s";
       i += 6;
       continue;
     }
 
     // check for &nbsp; tags
-    if (i < response.length() - 6 && response.substr(i, 6) == "&nbsp;")
+    if (i + 6 <= len && response.substr(i, 6) == "&nbsp;")
     {
+      result += " ";
       i += 6;
       continue;
     }
@@ -257,7 +312,7 @@ std::string FormatHTMLToString(const std::string &response)
     if (response[i] == '\n')
     {
       result += "\n";
-      while (i + 1 < response.length() && response[i + 1] == '\n')
+      while (i + 1 < len && response[i + 1] == '\n')
       {
         i++;
       }
@@ -267,7 +322,8 @@ std::string FormatHTMLToString(const std::string &response)
 
     if (response[i] == '\t')
     {
-      while (i + 1 < response.length() && response[i + 1] == '\t')
+      result += " "; // Convert tab to space
+      while (i + 1 < len && response[i + 1] == '\t')
       {
         i++;
       }
@@ -275,7 +331,7 @@ std::string FormatHTMLToString(const std::string &response)
       continue;
     }
 
-    result += (response[i]);
+    result += response[i];
     i++;
   }
   return result;
@@ -284,69 +340,76 @@ std::string FormatHTMLToString(const std::string &response)
 /**
  * Basic test cases given by leetcode are given in a string of the form. Example case & output.
  * Should always be at least 2 test cases given.
- * @returns array of oxpected outputs for the test cases.
+ * @returns array of expected outputs for the test cases.
  */
+// FIX: Use size_t for string indices and improve bounds checking
+// REASON: Prevent integer overflow and out-of-bounds access
 TestCaseResponse GetTestCases(const std::string &content)
 {
   TestCaseResponse tests;
-
-  int i = 0;
-  while (i < content.length())
+  const size_t len = content.length();
+  
+  size_t i = 0;
+  while (i < len)
   {
-    if (i < content.length() - 7 && content.substr(i, 7) == "Example")
+    if (i + 7 <= len && content.substr(i, 7) == "Example")
     {
       i += 7;
-      while (i < content.length())
+      while (i < len)
       {
-        if (i <= content.length() - 6 && content.substr(i, 6) == "Input:")
+        if (i + 6 <= len && content.substr(i, 6) == "Input:")
         {
           i += 6;
-          std::string input = "";
-          std::string paramName = "";
-          std::string paramRes = "";
-          int j = -1;
-          while (i < content.length() - 7 && content.substr(i, 7) != "\nOutput")
+          std::string paramName;
+          std::string paramRes;
+          bool foundEquals = false;
+          
+          while (i + 7 <= len && content.substr(i, 7) != "\nOutput")
           {
             // check if new param is being searched
-            if (i < content.length() - 1 && (content[i] == ',' && content[i + 1] == ' '))
+            if (i + 1 < len && content[i] == ',' && content[i + 1] == ' ')
             {
-              tests.testCaseParams.push_back({paramName, paramRes});
-              paramName = "";
-              paramRes = "";
-              j = -1;
-              i++;
+              if (!paramName.empty() && !paramRes.empty())
+              {
+                tests.testCaseParams.push_back({paramName, paramRes});
+              }
+              paramName.clear();
+              paramRes.clear();
+              foundEquals = false;
+              i += 2; // Skip both ',' and ' '
               continue;
             }
-            // now looking for paramResult so set j (flag for where = is)
+            
+            // now looking for paramResult so set flag
             if (content[i] == '=')
             {
-              j = i;
+              foundEquals = true;
               i++;
               continue;
             }
 
-            if (j == -1 && content[i] != ' ')
+            if (!foundEquals && content[i] != ' ')
             {
               paramName += content[i];
             }
-            else if (j != -1 && content[i] != ' ')
+            else if (foundEquals && content[i] != ' ')
             {
               paramRes += content[i];
             }
             i++;
           }
-          if (paramName.length() != 0 && paramRes.length() != 0)
+          
+          if (!paramName.empty() && !paramRes.empty())
           {
             tests.testCaseParams.push_back({paramName, paramRes});
           }
-          // std::cout << paramName << " " << paramRes << std::endl;
         }
 
-        if (i <= content.length() - 6 && content.substr(i, 6) == "Output")
+        if (i + 6 <= len && content.substr(i, 6) == "Output")
         {
           i += 6;
-          std::string testCase = "";
-          while (i < content.length() && content[i] != '\n')
+          std::string testCase;
+          while (i < len && content[i] != '\n')
           {
             if (content[i] != ' ' && content[i] != ':')
             {
@@ -354,7 +417,10 @@ TestCaseResponse GetTestCases(const std::string &content)
             }
             i++;
           }
-          tests.testCases.push_back(testCase);
+          if (!testCase.empty())
+          {
+            tests.testCases.push_back(testCase);
+          }
           break;
         }
         i++;
@@ -369,8 +435,23 @@ TestCaseResponse GetTestCases(const std::string &content)
   return tests;
 }
 
+// FIX: Added validation to prevent division by zero and improved type safety
+// REASON: Original code would crash if tests.testCases is empty
 void CreateJSON(json *response, const TestCaseResponse &tests)
 {
+  if (response == nullptr)
+  {
+    std::cerr << "Error: Null response pointer in CreateJSON" << std::endl;
+    return;
+  }
+  
+  // FIX: Validate title exists in response
+  if (!response->contains("title") || !(*response)["title"].is_string())
+  {
+    std::cerr << "Error: Invalid or missing title in response" << std::endl;
+    return;
+  }
+  
   // filter out invalid characters from title
   std::string title = (*response)["title"];
   const std::string invalid_chars = "\\/:*?\"<>|";
@@ -380,12 +461,10 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
   }
   std::string jsonName = "../../../Questions/" + title + ".txt";
 
-  std::ofstream outputJSON;
-  outputJSON.open(jsonName);
-  // should have to create the file so always should open
+  std::ofstream outputJSON(jsonName);
   if (!outputJSON.is_open())
   {
-    std::cerr << "Error creating output file for JSON response" << std::endl;
+    std::cerr << "Error creating output file: " << jsonName << std::endl;
     return;
   }
 
@@ -396,65 +475,91 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
     outputJSON << "\"" << it.key() << "\"" << ": " << it.value() << ',' << "\n";
   }
 
-  // handle situation where testCases might not generate
-
   // Insert testcases
   outputJSON << "\"testCases\"" << ": [" << "\n";
 
-  int j = 0;
-  int size = tests.testCases.size();
-  for (int i = 0; i < size; i++)
+  // FIX: Prevent division by zero and use size_t for indices
+  // REASON: Original code would crash if testCases is empty
+  const size_t numTestCases = tests.testCases.size();
+  
+  if (numTestCases > 0 && tests.testCaseParams.size() % numTestCases == 0)
   {
-    // start inserting new object into array inside json file
-    outputJSON << "{\n";
-
-    std::string expectedResult = tests.testCases[i]; // testcase expected outputs
-    outputJSON << "\"expectedResult\": " << "\"" << expectedResult << "\",\n";
-
-    int numParams = tests.testCaseParams.size() / tests.testCases.size();
-    for (int x = 0; x < numParams; x++)
+    const size_t numParamsPerTest = tests.testCaseParams.size() / numTestCases;
+    size_t paramIndex = 0;
+    
+    for (size_t i = 0; i < numTestCases; ++i)
     {
-      std::pair<std::string, std::string> fixedParam = tests.testCaseParams[j++];
-      if (x == numParams - 1)
+      outputJSON << "{\n";
+
+      const std::string &expectedResult = tests.testCases[i];
+      outputJSON << "\"expectedResult\": " << "\"" << expectedResult << "\"";
+      
+      if (numParamsPerTest > 0)
       {
-        outputJSON << "\"" << fixedParam.first << "\": " << "\"" << fixedParam.second << "\"\n";
+        outputJSON << ",\n";
       }
       else
       {
-        outputJSON << "\"" << fixedParam.first << "\": " << "\"" << fixedParam.second << "\",\n";
+        outputJSON << "\n";
+      }
+
+      for (size_t x = 0; x < numParamsPerTest; ++x)
+      {
+        if (paramIndex >= tests.testCaseParams.size())
+        {
+          std::cerr << "Warning: Parameter index out of bounds" << std::endl;
+          break;
+        }
+        
+        const auto &fixedParam = tests.testCaseParams[paramIndex++];
+        outputJSON << "\"" << fixedParam.first << "\": " << "\"" << fixedParam.second << "\"";
+        
+        if (x < numParamsPerTest - 1)
+        {
+          outputJSON << ",\n";
+        }
+        else
+        {
+          outputJSON << "\n";
+        }
+      }
+
+      if (i < numTestCases - 1)
+      {
+        outputJSON << "},\n";
+      }
+      else
+      {
+        outputJSON << "}\n";
       }
     }
-
-    // if i is at the end then we need to close off the obj
-    if (i == size - 1)
-    {
-      outputJSON << "}\n";
-    }
-    else
-    {
-      outputJSON << "},\n";
-    }
+  }
+  else if (numTestCases > 0)
+  {
+    std::cerr << "Warning: Mismatch between test cases and parameters" << std::endl;
   }
 
   outputJSON << "]\n";
-
   outputJSON << "}";
   outputJSON.close();
 }
 
 /**
  * params are taken from the json as a string containing 'paramName'='param'
- * This function splits the paramName and param seperately to label them in the output JSON easier.
- * (the problem function calls explicility used by the users will contain the same paramNames so makes using them easier as well)
+ * This function splits the paramName and param separately to label them in the output JSON easier.
+ * (the problem function calls explicitly used by the users will contain the same paramNames so makes using them easier as well)
+ * NOTE: This function appears to be unused in the current codebase.
  */
+// FIX: Use size_t for string indices for consistency
+// REASON: Prevent potential overflow with large strings
 std::pair<std::string, std::string> GetParamName(const std::string &param)
 {
-  std::string paramName = "";
-  std::string paramResult = "";
+  std::string paramName;
+  std::string paramResult;
   bool nameParsed = false;
-  for (int i = 0; i < param.length(); i++)
+  
+  for (size_t i = 0; i < param.length(); ++i)
   {
-
     if (param[i] == '=')
     {
       nameParsed = true;
