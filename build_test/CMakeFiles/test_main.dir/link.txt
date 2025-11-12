@@ -1,0 +1,1 @@
+/usr/bin/c++ -g CMakeFiles/test_main.dir/test_main.cpp.o -o test_main  /usr/lib/x86_64-linux-gnu/libcurl.so /usr/lib/x86_64-linux-gnu/libgtest.a /usr/lib/x86_64-linux-gnu/libgtest_main.a /usr/lib/x86_64-linux-gnu/libgtest.a 
