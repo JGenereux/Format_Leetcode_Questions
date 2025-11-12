@@ -5,15 +5,17 @@
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <sys/stat.h>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
-// used to have a dynamic string
+// Structure to hold dynamically growing response string from HTTP request
+// Memory is allocated/reallocated as data arrives and must be freed by caller
 typedef struct Response
 {
-  char *string;
-  size_t size;
+  char *string;  // Dynamically allocated buffer for response data
+  size_t size;   // Current size of data (excluding null terminator)
 };
 
 struct TestCaseResponse
@@ -52,6 +54,8 @@ int main()
     std::cout << "Curl initialized successfully!" << std::endl;
   }
 
+  // Initialize response structure with minimal allocation
+  // This will be expanded by write_chunk callback as data arrives
   Response response;
   response.string = (char *)malloc(1);
   response.size = 0;
@@ -70,7 +74,8 @@ int main()
   const std::string postData = query.dump();
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
 
-  // Set headers for JSON data
+  // Set HTTP headers for JSON data and referrer
+  // Note: headers must be freed with curl_slist_free_all() before exit
   struct curl_slist *headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
 
@@ -94,54 +99,76 @@ int main()
   if (result != CURLE_OK)
   {
     std::cerr << "Error: " << curl_easy_strerror(result) << std::endl;
+    // Clean up all allocated resources before returning
+    free(response.string);
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     return -1;
   }
 
   formatResponse(response.string);
+  
+  // Clean up all allocated resources
   free(response.string);
-  // Cleanup
+  curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
   return 0;
 }
 
-// returns number of bytes in the chunk
-//  data is set to a ptr that points to block of data recieved in this chunk
-//  nmemb is the number of bytes in the block of data
-// userData points to what we want (points to where the response string is stored)
+/**
+ * Callback function for CURL to handle incoming data chunks
+ * 
+ * @param data Pointer to the block of data received in this chunk
+ * @param size Size multiplier (always 1 per CURL documentation)
+ * @param nmemb Number of bytes in the data block
+ * @param userData User-provided pointer (points to Response structure)
+ * @return Number of bytes processed (real_size), or 0 on error
+ * 
+ * Note: Response string memory is reallocated to accommodate new data.
+ *       Caller is responsible for freeing Response.string when done.
+ */
 size_t write_chunk(void *data, size_t size, size_t nmemb, void *userData)
 {
   // size is always 1
   size_t real_size = size * nmemb;
 
   Response *response = (Response *)userData;
-  // allocate more space for chunk that was recieved
-  // response->size is size of existing mem and real_size is the size recieved and +1 accounts for null
+  
+  // Reallocate buffer to accommodate new chunk
+  // New size = existing data + new chunk + null terminator
   char *ptr = (char *)realloc(response->string, response->size + real_size + 1);
 
   if (ptr == nullptr)
   {
-    std::cerr << "Problem reallocating space for chunk recieved" << std::endl;
-    return 0;
+    std::cerr << "Error: Failed to reallocate memory for incoming data chunk" << std::endl;
+    return 0;  // Returning 0 signals error to CURL
   }
-  // set response string to the new (larger) memory address
+  
+  // Update pointer to newly allocated memory
   response->string = ptr;
-  // append new porition onto existing string
+  
+  // Append new chunk to existing data
   memcpy(&(response->string[response->size]), data, real_size);
-  // update strings size
+  
+  // Update size and null-terminate
   response->size += real_size;
-  // append null character
   response->string[response->size] = '\0';
   return real_size;
 }
 
 /**
- * Returns a map containing the following tags stored as keys
- * and their description as their value.
- *
- * title content difficulty topicTags { name } hints
- *
- * Assumes json response will use the tags in the given order above.
+ * Parses and formats the JSON response from LeetCode GraphQL API
+ * 
+ * Extracts and processes the following fields:
+ * - title: Question title
+ * - content: Question description (HTML converted to plain text)
+ * - difficulty: Easy/Medium/Hard
+ * - topicTags: Array of topic names
+ * - hints: Formatted hints (if available)
+ * 
+ * Also extracts test cases from the content and creates output JSON file.
+ * 
+ * @param response Raw JSON response string from HTTP request
  */
 void formatResponse(char *response)
 {
@@ -282,9 +309,15 @@ std::string FormatHTMLToString(const std::string &response)
 }
 
 /**
- * Basic test cases given by leetcode are given in a string of the form. Example case & output.
- * Should always be at least 2 test cases given.
- * @returns array of oxpected outputs for the test cases.
+ * Extracts test cases from LeetCode question content
+ * 
+ * Parses content to find "Example" sections containing Input/Output pairs.
+ * Format expected: "Input: param1 = value1, param2 = value2\nOutput: result"
+ * 
+ * @param content Formatted question content string
+ * @return TestCaseResponse containing test case outputs and parameter name-value pairs
+ * 
+ * Note: Assumes at least 2 test cases are present in typical LeetCode format.
  */
 TestCaseResponse GetTestCases(const std::string &content)
 {
@@ -371,21 +404,39 @@ TestCaseResponse GetTestCases(const std::string &content)
 
 void CreateJSON(json *response, const TestCaseResponse &tests)
 {
-  // filter out invalid characters from title
+  // Filter out invalid filesystem characters from title to create a safe filename
   std::string title = (*response)["title"];
   const std::string invalid_chars = "\\/:*?\"<>|";
   for (char c : invalid_chars)
   {
     std::replace(title.begin(), title.end(), c, '_');
   }
-  std::string jsonName = "../../../Questions/" + title + ".txt";
+  
+  // Create output directory path relative to the build directory
+  // Note: This assumes execution from /workspace/build directory
+  std::string outputDir = "../../../Questions";
+  std::string jsonName = outputDir + "/" + title + ".txt";
+
+  // Check if output directory exists, create it if it doesn't
+  struct stat info;
+  if (stat(outputDir.c_str(), &info) != 0)
+  {
+    std::cerr << "Warning: Output directory '" << outputDir << "' does not exist." << std::endl;
+    std::cerr << "Please create the directory or update the path." << std::endl;
+    return;
+  }
+  else if (!(info.st_mode & S_IFDIR))
+  {
+    std::cerr << "Error: '" << outputDir << "' exists but is not a directory." << std::endl;
+    return;
+  }
 
   std::ofstream outputJSON;
   outputJSON.open(jsonName);
-  // should have to create the file so always should open
   if (!outputJSON.is_open())
   {
-    std::cerr << "Error creating output file for JSON response" << std::endl;
+    std::cerr << "Error: Failed to create output file '" << jsonName << "'" << std::endl;
+    std::cerr << "Please check file permissions and path validity." << std::endl;
     return;
   }
 
@@ -443,9 +494,16 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
 }
 
 /**
- * params are taken from the json as a string containing 'paramName'='param'
- * This function splits the paramName and param seperately to label them in the output JSON easier.
- * (the problem function calls explicility used by the users will contain the same paramNames so makes using them easier as well)
+ * Parses parameter string to extract parameter name and value
+ * 
+ * Expected format: "paramName = paramValue"
+ * Splits into separate name and value strings for easier JSON formatting.
+ * 
+ * @param param Input string containing parameter assignment
+ * @return Pair of (paramName, paramValue) with whitespace removed
+ * 
+ * Note: This format matches the parameter names used in actual function calls,
+ *       making the generated test cases easier to use.
  */
 std::pair<std::string, std::string> GetParamName(const std::string &param)
 {
