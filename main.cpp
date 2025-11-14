@@ -1,11 +1,14 @@
 #include <curl/curl.h>
 #include <string.h>
 
-#include <unordered_set>
-#include <iostream>
+#include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 using json = nlohmann::json;
 
@@ -30,12 +33,19 @@ TestCaseResponse GetTestCases(const std::string &content);
 
 std::pair<std::string, std::string> GetParamName(const std::string &param);
 void CreateJSON(json *response, const TestCaseResponse &testCases);
+bool RunInternalTests();
 
 int main()
 {
   std::string questionName = "";
   std::cout << "Enter Leetcode question name: " << std::endl;
   std::cin >> questionName;
+
+  if (questionName == "__test__")
+  {
+    bool success = RunInternalTests();
+    return success ? 0 : 1;
+  }
 
   CURL *curl;
   CURLcode result;
@@ -440,6 +450,68 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
 
   outputJSON << "}";
   outputJSON.close();
+}
+
+bool RunInternalTests()
+{
+  int passed = 0;
+  int failed = 0;
+  auto check = [&](bool condition, const std::string &name) {
+    if (condition)
+    {
+      std::cout << "[PASS] " << name << std::endl;
+      passed++;
+    }
+    else
+    {
+      std::cout << "[FAIL] " << name << std::endl;
+      failed++;
+    }
+  };
+
+  const std::string htmlInput = "<div>Sum&nbsp;Check &lt;a&gt; &amp; b</div>\n\n\tValues";
+  const std::string expectedHtml = "SumCheck <a> & b\nValues";
+  check(FormatHTMLToString(htmlInput) == expectedHtml, "FormatHTMLToString strips HTML and entities");
+
+  const std::string sampleContent = R"(Example 1:
+Input: nums = [2,7,11,15], target = 9
+Output: [0,1]
+
+Example 2:
+Input: nums = [3,2,4], target = 6
+Output: [1,2]
+)";
+  TestCaseResponse parsedTests = GetTestCases(sampleContent);
+  bool testCaseCount = parsedTests.testCases.size() == 2;
+  bool outputsMatch = testCaseCount &&
+                      parsedTests.testCases[0] == "[0,1]" &&
+                      parsedTests.testCases[1] == "[1,2]";
+  bool paramsMatch = parsedTests.testCaseParams.size() == 4 &&
+                     parsedTests.testCaseParams[0].first == "nums" &&
+                     parsedTests.testCaseParams[0].second == "[2,7,11,15]" &&
+                     parsedTests.testCaseParams[1].first == "target" &&
+                     parsedTests.testCaseParams[1].second == "9" &&
+                     parsedTests.testCaseParams[2].first == "nums" &&
+                     parsedTests.testCaseParams[2].second == "[3,2,4]" &&
+                     parsedTests.testCaseParams[3].first == "target" &&
+                     parsedTests.testCaseParams[3].second == "6";
+  check(testCaseCount && outputsMatch && paramsMatch, "GetTestCases extracts inputs and outputs");
+
+  auto paramSplit = GetParamName("target = 6");
+  check(paramSplit.first == "target" && paramSplit.second == "6", "GetParamName splits parameter strings");
+
+  Response response;
+  response.string = (char *)malloc(1);
+  response.size = 0;
+  const char firstChunk[] = "abc";
+  const char secondChunk[] = "xyz";
+  write_chunk((void *)firstChunk, 1, 3, &response);
+  write_chunk((void *)secondChunk, 1, 3, &response);
+  check(std::string(response.string) == "abcxyz", "write_chunk appends successive chunks");
+  free(response.string);
+
+  std::cout << "Tests passed: " << passed << ", failed: " << failed << std::endl;
+  return failed == 0;
 }
 
 /**
