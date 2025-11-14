@@ -1,10 +1,14 @@
+#ifndef UNIT_TESTING
 #include <curl/curl.h>
+#endif
 #include <string.h>
 
 #include <unordered_set>
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <algorithm>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -29,8 +33,9 @@ std::string FormatHTMLToString(const std::string &response);
 TestCaseResponse GetTestCases(const std::string &content);
 
 std::pair<std::string, std::string> GetParamName(const std::string &param);
-void CreateJSON(json *response, const TestCaseResponse &testCases);
+void CreateJSON(json *response, const TestCaseResponse &testCases, const std::string &outputDir = "../../../Questions");
 
+#ifndef UNIT_TESTING
 int main()
 {
   std::string questionName = "";
@@ -104,6 +109,7 @@ int main()
   curl_easy_cleanup(curl);
   return 0;
 }
+#endif
 
 // returns number of bytes in the chunk
 //  data is set to a ptr that points to block of data recieved in this chunk
@@ -369,8 +375,9 @@ TestCaseResponse GetTestCases(const std::string &content)
   return tests;
 }
 
-void CreateJSON(json *response, const TestCaseResponse &tests)
+void CreateJSON(json *response, const TestCaseResponse &tests, const std::string &outputDir)
 {
+  namespace fs = std::filesystem;
   // filter out invalid characters from title
   std::string title = (*response)["title"];
   const std::string invalid_chars = "\\/:*?\"<>|";
@@ -378,14 +385,25 @@ void CreateJSON(json *response, const TestCaseResponse &tests)
   {
     std::replace(title.begin(), title.end(), c, '_');
   }
-  std::string jsonName = "../../../Questions/" + title + ".txt";
+  fs::path basePath(outputDir);
+  std::error_code ec;
+  if (!fs::exists(basePath))
+  {
+    fs::create_directories(basePath, ec);
+    if (ec)
+    {
+      std::cerr << "Error creating output directory: " << ec.message() << std::endl;
+      return;
+    }
+  }
+  fs::path outputPath = basePath / (title + ".txt");
 
   std::ofstream outputJSON;
-  outputJSON.open(jsonName);
+  outputJSON.open(outputPath);
   // should have to create the file so always should open
   if (!outputJSON.is_open())
   {
-    std::cerr << "Error creating output file for JSON response" << std::endl;
+    std::cerr << "Error creating output file for JSON response: " << outputPath << std::endl;
     return;
   }
 
